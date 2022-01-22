@@ -8,8 +8,10 @@ import json
 
 
 class SaveRowException(Exception):
-
     def __init__(self, row_number=None, traceback_log=None, message=None):
+        '''
+        Custom hack exception for logging
+        '''
         with open("last_row.txt","w+") as f:
             f.write(str(traceback_log) + '\n')
             f.write(str(message) + '\n')
@@ -102,6 +104,9 @@ class HuntFlowApi:
     
 
 def createParser ():
+    '''
+    Add neccessary options for command line launching
+    '''
     parser = argparse.ArgumentParser()
     parser.add_argument ('-t', '--token')
     parser.add_argument ('-p', '--path', default=os.path.dirname(os.path.abspath(__file__)))
@@ -109,17 +114,24 @@ def createParser ():
     return parser
 
 
-def get_db_xlsx_if_exists(root, files, db_ext, match_db):
+def get_db_xlsx_if_exists(root: str, files: list, db_ext: str, match_db: list):
+    '''
+    Find and read xlsx db
+    '''
     for file in files:
         if not (file.endswith(db_ext) and any(x in file for x in match_db)):
             continue
         # troubles with memory
         df = pd.read_excel(os.path.join(root,file), engine='openpyxl')
         df.columns = ['position', 'full_name', 'money', 'comment', 'status']
-        return df.to_dict('records')
+    
+    return df.to_dict('records')
 
 
-def get_files_n_questionnaires(base_root, db_ext, match_db):
+def get_files_n_questionnaires(base_root: str, db_ext: str, match_db: list) -> dict:
+    '''
+    Read and process path
+    '''
     vacansy_files = {}
     for (root, dirs, files) in os.walk(base_root, topdown=True):
 
@@ -137,20 +149,23 @@ def get_files_n_questionnaires(base_root, db_ext, match_db):
 
     # add file path to db dict
     for row in data:
-        vacansy = row['position'].strip()
-        if vacansy not in vacansy_files:
+        vacancy = row['position'].strip()
+        if vacancy not in vacansy_files:
             continue
         first_name, last_name = row['full_name'].split()[:2]
-        for file_name, file_path in vacansy_files[vacansy].items():
+        for file_name, file_path in vacansy_files[vacancy].items():
             if first_name in file_name and last_name in file_name:
                 row['file'] = file_path
     return data
 
 
-def prepare_data(row):
+def prepare_data(row: dict) -> dict:
+    '''
+    Prepare data from file for adding applicant to huntflow db
+    '''
     try:
         if not row.get('file', ''):
-            raise Exception
+            raise Exception(f'There is no file for {row}')
 
         resp = json.loads(
             huntflow_obj.upload_file(
@@ -201,10 +216,14 @@ def prepare_data(row):
         file_data['money'] = row['money']
         row['add_applicant'] = file_data
     except:
-        print(traceback.format_exc())
-
+        raise Exception(traceback.format_exc())
     return row
-def get_vacancies_n_statuses_ids(huntflow_obj):
+
+
+def get_vacancies_n_statuses_ids(huntflow_obj) -> tuple:
+    '''
+    Get vacancies n statuses ids from api
+    '''
     # create dict vacancy: id
     vacancies_dict = {}
     for vacancy in json.loads(huntflow_obj.get_vacancies().text)['items']:
@@ -217,14 +236,14 @@ def get_vacancies_n_statuses_ids(huntflow_obj):
     return vacancies_dict, statuses_dict
 
 
-def prepare_data_to_add_to_vacancy(row, vacancies_dict, statuses_dict):
+def prepare_data_to_add_to_vacancy(row: dict, vacancies_dict: dict, statuses_dict: dict) -> dict: 
+    '''
+    Preparing json for adding applicant to vacancy
+    '''
     for_add_to_vacancy = {}
     for_add_to_vacancy['status'] = statuses_dict.get(row['status'], '')
     for_add_to_vacancy['vacancy'] = vacancies_dict.get(row['position'], '')
-    try:
-        for_add_to_vacancy['files'] = row['add_applicant']['externals'][0]['files']
-    except KeyError:
-        pass
+    for_add_to_vacancy['files'] = row['add_applicant']['externals'][0]['files']
     for_add_to_vacancy['id'] = row['applicant_id']
     for_add_to_vacancy['comment'] = row.get('comment', '')
     row['for_add_to_vacancy'] = for_add_to_vacancy
@@ -255,6 +274,7 @@ if __name__ == '__main__':
  
     huntflow_obj = HuntFlowApi(token)
     vacancies_dict, statuses_dict = get_vacancies_n_statuses_ids(huntflow_obj)
+
     try:
         for i, row in enumerate(db_data):
             if namespace.cont and 'line_number' in locals():
@@ -274,10 +294,12 @@ if __name__ == '__main__':
                 statuses_dict=statuses_dict
             )
 
-            json.loads(huntflow_obj.add_applicant_to_vacancy(data=row['for_add_to_vacancy']).text)
+            # json.loads(huntflow_obj.add_applicant_to_vacancy(data=row['for_add_to_vacancy']).text)
+            huntflow_obj.add_applicant_to_vacancy(data=row['for_add_to_vacancy'])
     except:
+        print(f'{i+1}/{len(db_data)} lines successfully uploaded')
         raise SaveRowException(
             row_number=i, 
             traceback_log=traceback.format_exc()
         )
-    print(f'{len(db_data)} lines successfully uploaded')
+    print(f'{i+1}/{len(db_data)} lines successfully uploaded')
