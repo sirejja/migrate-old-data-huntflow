@@ -6,7 +6,7 @@
 -p, --path  
 -c, --cont       (запуск с последней штатно обработанной строки xlsx)
 
-**python move_data.py --token token --path path --cont 1**
+**python move_data.py --token token --path path --cont 1**  
 default path - папка со скриптом.
 
 ### Версия python:
